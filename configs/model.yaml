@@ -1,0 +1,83 @@
+# Project Garuda - Model & Pipeline Configuration
+
+# --- Model Settings ---
+model:
+  architecture: yolov8n          # yolov8n / yolov8s / yolov8m / yolov8l / yolov8x
+  weights: models/weights/best.pt            # pretrained weights path
+  confidence_threshold: 0.35
+  iou_threshold: 0.45
+  max_detections: 100
+  device: auto                   # auto / cpu / cuda / mps
+
+# --- Training Settings ---
+training:
+  epochs: 100
+  batch_size: 16
+  image_size: 640
+  optimizer: AdamW
+  learning_rate: 0.001
+  weight_decay: 0.0005
+  warmup_epochs: 3
+  patience: 20                   # early stopping patience
+  save_period: 10                # checkpoint every N epochs
+  workers: 8
+  project: runs/train
+  name: garuda_exp
+  resume: false                  # set to true or path to resume
+  pretrained: true
+
+# --- Inference Settings ---
+inference:
+  source: 0                     # 0 = webcam, or path to video/image
+  image_size: 640
+  frame_skip: 2                 # process every Nth frame (1 = no skip)
+  resolution_width: 1280
+  resolution_height: 720
+  show_display: true
+  save_output: false
+  output_path: runs/inference
+
+# --- Tracking Settings ---
+tracking:
+  enabled: true
+  max_age: 30                   # max frames to keep lost track
+  n_init: 3                     # min detections before track confirmed
+  max_iou_distance: 0.7
+  max_cosine_distance: 0.3
+  nn_budget: 100
+
+# --- Alert Settings ---
+alerts:
+  enabled: true
+  flagged_classes:
+    - car
+    - truck
+    - bus
+    - person
+  cooldown_seconds: 5           # min seconds between repeated alerts
+  webhook_url: ""               # optional webhook URL
+  log_file: logs/alerts.log
+
+# --- Export Settings ---
+export:
+  format: onnx                  # onnx / tflite / torchscript / engine
+  dynamic: false
+  simplify: true
+  opset: 12
+  half: false                   # FP16 quantization
+  int8: false                   # INT8 quantization
+
+# --- Performance Targets ---
+performance:
+  raspberry_pi:
+    target_fps: 5
+    model: yolov8n
+    format: tflite
+    image_size: 320
+    frame_skip: 3
+  jetson:
+    target_fps: 15
+    model: yolov8s
+    format: engine
+    image_size: 640
+    frame_skip: 1

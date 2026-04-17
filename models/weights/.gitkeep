@@ -1,0 +1,6 @@
+# Model weights directory
+# Place trained and exported model files here:
+#   - .pt     (PyTorch)
+#   - .onnx   (ONNX)
+#   - .tflite (TFLite)
+#   - .engine (TensorRT)

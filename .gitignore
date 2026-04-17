@@ -1,0 +1,39 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+venv/
+env/
+garuda_env/
+.venv/
+
+# Model weights (large files)
+models/weights/*.pt
+models/weights/*.onnx
+models/weights/*.tflite
+models/weights/*.engine
+!models/weights/.gitkeep
+
+# Training outputs
+runs/
+logs/
+
+# Datasets
+datasets/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Distribution
+dist/
+build/
+*.egg-info/
