@@ -13,7 +13,8 @@ import logging
 import time
 from pathlib import Path
 
-import requests  # type: ignore[import-untyped]
+# requests is imported lazily inside _webhook_alert() so that the module
+# loads cleanly on Raspberry Pi where 'requests' is not installed.
 
 logger = logging.getLogger("garuda.alerts")
 
@@ -111,8 +112,17 @@ class AlertManager:
             logger.error("Failed to write alert log: %s", e)
 
     def _webhook_alert(self, alert: dict) -> None:
-        """Send alert via webhook POST."""
+        """Send alert via webhook POST (skipped if 'requests' not installed)."""
         if not self.webhook_url:
+            return
+        try:
+            import requests  # lazy — not available on Raspberry Pi by default
+        except ImportError:
+            logger.warning(
+                "Webhook skipped: 'requests' package not installed. "
+                "Install it with: pip install requests"
+            )
+            self.webhook_url = ""  # disable future attempts
             return
         try:
             resp = requests.post(

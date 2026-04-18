@@ -1,0 +1,24 @@
+# Project Garuda — Raspberry Pi 4 Minimal Dependencies
+# Install with:  pip install -r requirements_pi.txt
+#
+# Total footprint: ~120 MB  (vs ~1.5 GB for full requirements.txt)
+# Tested on: Raspberry Pi OS 64-bit (Bullseye / Bookworm), ARM64
+
+# Core numeric + vision
+numpy>=1.24.0,<2.0
+opencv-python-headless>=4.8.0   # headless build — no Qt/GTK dependency
+
+# Config parsing
+PyYAML>=6.0
+
+# ONNX Runtime — CPU-only, ARM64 wheel for Pi 4
+# The onnxruntime package ships ARM64 wheels on PyPI since v1.16
+onnxruntime>=1.16.0
+
+# ---------------------------------------------------------------
+# NOT installed on Pi (to keep the footprint minimal):
+#   torch / ultralytics   — model already exported to ONNX
+#   deep_sort_realtime    — built-in IOU tracker used instead
+#   gradio                — no web UI on Pi
+#   requests              — webhook alerts disabled by default
+# ---------------------------------------------------------------

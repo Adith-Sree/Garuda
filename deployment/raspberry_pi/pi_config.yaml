@@ -1,0 +1,42 @@
+# Project Garuda — Raspberry Pi 4 Inference Config
+# Tuned for Pi 4 CPU-only inference at 320x320 resolution.
+# Pass with:  python run_pi.py --config deployment/raspberry_pi/pi_config.yaml
+
+# --- Detection ---
+model:
+  confidence_threshold: 0.35
+  iou_threshold: 0.45
+
+# --- Inference ---
+inference:
+  image_size: 320          # 320x320 gives best CPU speed/accuracy trade-off
+  frame_skip: 3            # run ONNX every 3rd frame  →  display stays smooth
+  show_display: true       # set false or use --no-display for headless/SSH
+
+# --- Tracking (IOU-based, no deep_sort_realtime required) ---
+tracking:
+  enabled: true
+  max_age: 15              # frames to keep a lost track alive (reduced for Pi)
+  n_init: 2               # detections needed to confirm a track  (reduced)
+  max_iou_distance: 0.7
+
+# --- Alerts (console + file only; webhook disabled to avoid requests dep) ---
+alerts:
+  enabled: true
+  flagged_classes:
+    - car
+    - truck
+    - bus
+    - person
+  cooldown_seconds: 5
+  webhook_url: ""          # leave empty — requests not installed on Pi
+  log_file: logs/alerts.log
+
+# --- Gimbal PID ---
+gimbal:
+  enabled: true
+  p_gain: 0.5
+  i_gain: 0.0
+  d_gain: 0.1
+  deadzone: 0.02
+  max_output: 1.0
