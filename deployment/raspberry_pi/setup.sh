@@ -34,9 +34,9 @@ pip install --upgrade pip
 pip install numpy opencv-python-headless pyyaml requests
 pip install deep_sort_realtime
 
-# Install TFLite runtime (optimised for ARM)
-echo "[5/6] Installing TFLite runtime..."
-pip install tflite-runtime || pip install ai-edge-litert || echo "⚠️  tflite-runtime could not be installed via pip. Falling back to Ultralytics native inference."
+# Install ONNX Runtime (optimised for ARM64 on Pi 4)
+echo "[5/6] Installing ONNX Runtime..."
+pip install onnxruntime
 
 # Install Ultralytics (lightweight mode)
 pip install ultralytics

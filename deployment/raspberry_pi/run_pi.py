@@ -3,8 +3,8 @@ from __future__ import annotations
 """
 Raspberry Pi Inference — Project Garuda
 
-Optimised inference pipeline for Raspberry Pi using TFLite models.
-Target: 3–8 FPS on Raspberry Pi 4/5.
+Optimised inference pipeline for Raspberry Pi 4 using ONNX Runtime.
+Target: 3–8 FPS on Raspberry Pi 4 @ 320x320.
 """
 
 import argparse
@@ -27,80 +27,71 @@ from src.tracking.gimbal_tracker import GimbalTracker
 logger = setup_logger("garuda.pi", log_file="logs/pi_inference.log")
 
 
-class TFLiteDetector:
-    """Lightweight TFLite detector for Raspberry Pi."""
+class ONNXDetector:
+    """Lightweight ONNX Runtime detector for Raspberry Pi 4."""
 
     def __init__(
         self,
         model_path: str,
         confidence_threshold: float = 0.35,
-        class_names: dict | None = None,
+        class_names: dict = None,
     ):
         self.confidence_threshold = confidence_threshold
         self.class_names = class_names or {}
 
         try:
-            from tflite_runtime.interpreter import Interpreter
+            import onnxruntime as ort
         except ImportError:
-            try:
-                from ai_edge_litert.interpreter import Interpreter
-            except ImportError:
-                from tensorflow.lite.python.interpreter import Interpreter
+            raise RuntimeError(
+                "onnxruntime not installed. Run: pip install onnxruntime"
+            )
 
-        self.interpreter = Interpreter(model_path=model_path)
-        self.interpreter.allocate_tensors()
-
-        self.input_details = self.interpreter.get_input_details()
-        self.output_details = self.interpreter.get_output_details()
-        self.input_shape = self.input_details[0]["shape"]
+        # Use CPU provider — Pi 4 doesn't have GPU
+        self.session = ort.InferenceSession(
+            model_path,
+            providers=["CPUExecutionProvider"]
+        )
+        self.input_name = self.session.get_inputs()[0].name
+        self.input_shape = self.session.get_inputs()[0].shape  # [1, 3, H, W]
+        self.imgsz = self.input_shape[2] if len(self.input_shape) == 4 else 320
 
         logger.info(
-            "TFLite model loaded: %s (input shape: %s)",
-            model_path,
-            self.input_shape,
+            "ONNX model loaded: %s (input: %s)", model_path, self.input_shape
         )
 
     def detect(self, frame: np.ndarray) -> list:
-        """Run inference on a frame."""
+        """Run ONNX inference on a frame."""
         from src.detection.yolo_detector import Detection
 
-        # Preprocess
-        h, w = self.input_shape[1], self.input_shape[2]
-        input_data = cv2.resize(frame, (w, h))
-        input_data = np.expand_dims(input_data, axis=0)
-
-        if self.input_details[0]["dtype"] == np.float32:
-            input_data = input_data.astype(np.float32) / 255.0
+        # Preprocess: resize → BGR→RGB → normalize → NCHW
+        img = cv2.resize(frame, (self.imgsz, self.imgsz))
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        img = img.astype(np.float32) / 255.0
+        img = np.transpose(img, (2, 0, 1))          # HWC → CHW
+        img = np.expand_dims(img, axis=0)            # CHW → NCHW
 
         # Run inference
-        self.interpreter.set_tensor(self.input_details[0]["index"], input_data)
-        self.interpreter.invoke()
+        outputs = self.session.run(None, {self.input_name: img})
+        output = outputs[0]  # shape: [1, 84, N] for YOLOv8 COCO
 
-        # Parse output
-        output = self.interpreter.get_tensor(self.output_details[0]["index"])
-        detections = self._parse_output(output, frame.shape[:2])
-        return detections
+        return self._parse_output(output, frame.shape[:2])
 
-    def _parse_output(
-        self, output: np.ndarray, original_shape: tuple
-    ) -> list:
-        """Parse TFLite output tensor to Detection objects."""
+    def _parse_output(self, output: np.ndarray, original_shape: tuple) -> list:
+        """Parse YOLOv8 ONNX output to Detection objects."""
         from src.detection.yolo_detector import Detection
 
-        detections = []
         oh, ow = original_shape
+        detections = []
 
-        # Output format depends on model export; handle common YOLOv8 TFLite format
         if output.ndim == 3:
-            output = output[0]
-
+            output = output[0]          # [84, N]
         if output.shape[0] < output.shape[1]:
-            output = output.T
+            output = output.T           # → [N, 84]
 
         for row in output:
             if len(row) < 6:
                 continue
-            x_c, y_c, w, h = row[0], row[1], row[2], row[3]
+            x_c, y_c, w, h = float(row[0]), float(row[1]), float(row[2]), float(row[3])
             scores = row[4:]
             cls_id = int(np.argmax(scores))
             conf = float(scores[cls_id])
@@ -108,6 +99,7 @@ class TFLiteDetector:
             if conf < self.confidence_threshold:
                 continue
 
+            # Denormalize from [0,1] to pixel coordinates
             x1 = int((x_c - w / 2) * ow)
             y1 = int((y_c - h / 2) * oh)
             x2 = int((x_c + w / 2) * ow)
@@ -128,8 +120,8 @@ class TFLiteDetector:
 def main():
     parser = argparse.ArgumentParser(description="Garuda — Raspberry Pi Inference")
     parser.add_argument(
-        "--model", type=str, default="models/weights/yolov8n_float32.tflite",
-        help="TFLite model path"
+        "--model", type=str, default="models/pi4/yolov8n_pi4_320.onnx",
+        help="ONNX model path"
     )
     parser.add_argument("--source", type=str, default="0", help="Video source")
     parser.add_argument("--conf", type=float, default=0.35, help="Confidence threshold")
@@ -154,7 +146,7 @@ def main():
             data_cfg = yaml.safe_load(f)
             class_names = data_cfg.get("names", {})
 
-    detector = TFLiteDetector(
+    detector = ONNXDetector(
         model_path=args.model,
         confidence_threshold=args.conf,
         class_names=class_names,
