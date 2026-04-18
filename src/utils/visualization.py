@@ -58,12 +58,14 @@ class Visualizer:
         show_confidence: bool = True,
         show_track_id: bool = True,
         alert_color: tuple[int, int, int] = (0, 0, 255),
+        lock_color: tuple[int, int, int] = (0, 255, 255),  # Cyan
     ):
         self.line_thickness = line_thickness
         self.font_scale = font_scale
         self.show_confidence = show_confidence
         self.show_track_id = show_track_id
         self.alert_color = alert_color
+        self.lock_color = lock_color
 
     def draw_detections(
         self,
@@ -96,6 +98,7 @@ class Visualizer:
         frame: np.ndarray,
         tracks: list,
         flagged_classes: set[str] | None = None,
+        locked_id: int | None = None,
     ) -> np.ndarray:
         """Draw bounding boxes with track IDs."""
         annotated = frame.copy()
@@ -104,15 +107,36 @@ class Visualizer:
         for trk in tracks:
             x1, y1, x2, y2 = trk.bbox
             is_flagged = trk.class_name in flagged
-            color = (
-                self.alert_color
-                if is_flagged
-                else CLASS_COLORS[trk.track_id % len(CLASS_COLORS)]
-            )
+            is_locked = trk.track_id == locked_id
+            
+            if is_locked:
+                color = self.lock_color
+                thickness = self.line_thickness * 2
+            else:
+                color = (
+                    self.alert_color
+                    if is_flagged
+                    else CLASS_COLORS[int(trk.track_id) % len(CLASS_COLORS)]
+                )
+                thickness = self.line_thickness
 
-            cv2.rectangle(annotated, (x1, y1), (x2, y2), color, self.line_thickness)
+            cv2.rectangle(annotated, (x1, y1), (x2, y2), color, thickness)
+            
+            if is_locked:
+                # Draw corner brackets for locked target
+                len_l = 20
+                cv2.line(annotated, (x1, y1), (x1 + len_l, y1), color, thickness)
+                cv2.line(annotated, (x1, y1), (x1, y1 + len_l), color, thickness)
+                cv2.line(annotated, (x2, y1), (x2 - len_l, y1), color, thickness)
+                cv2.line(annotated, (x2, y1), (x2, y1 + len_l), color, thickness)
+                cv2.line(annotated, (x1, y2), (x1 + len_l, y2), color, thickness)
+                cv2.line(annotated, (x1, y2), (x1, y2 - len_l), color, thickness)
+                cv2.line(annotated, (x2, y2), (x2 - len_l, y2), color, thickness)
+                cv2.line(annotated, (x2, y2), (x2, y2 - len_l), color, thickness)
 
             label_parts = []
+            if is_locked:
+                label_parts.append("[LOCKED]")
             if self.show_track_id:
                 label_parts.append(f"ID:{trk.track_id}")
             if trk.class_name:
@@ -185,6 +209,37 @@ class Visualizer:
             1,
             cv2.LINE_AA,
         )
+
+    def draw_gimbal_info(self, frame: np.ndarray, signal: Any) -> np.ndarray:
+        """Draw gimbal control signal info."""
+        h, w = frame.shape[:2]
+        
+        # Draw center crosshair
+        cv2.line(frame, (w // 2 - 20, h // 2), (w // 2 + 20, h // 2), (255, 255, 255), 1)
+        cv2.line(frame, (w // 2, h // 2 - 20), (w // 2, h // 2 + 20), (255, 255, 255), 1)
+        
+        # Display control offsets
+        text = f"GIMBAL: LOCK={signal.track_id} DX={signal.dx:+.2f} DY={signal.dy:+.2f}"
+        cv2.putText(
+            frame,
+            text,
+            (10, h - 30),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.7,
+            self.lock_color,
+            2,
+            cv2.LINE_AA,
+        )
+        
+        # Draw error vector
+        if signal.dx != 0 or signal.dy != 0:
+            end_point = (
+                int(w // 2 + signal.dx * 100),
+                int(h // 2 + signal.dy * 100)
+            )
+            cv2.arrowedLine(frame, (w // 2, h // 2), end_point, self.lock_color, 2)
+            
+        return frame
 
     @staticmethod
     def _get_color(class_id: int) -> tuple[int, int, int]:

@@ -18,6 +18,7 @@ import yaml
 
 from src.detection.yolo_detector import YOLODetector
 from src.tracking.tracker import ObjectTracker
+from src.tracking.gimbal_tracker import GimbalTracker
 from src.alerts.alert_manager import AlertManager
 from src.utils.visualization import Visualizer
 from src.utils.preprocessing import FramePreprocessor
@@ -56,6 +57,11 @@ class DetectionPipeline:
             else None
         )
         self.visualizer = Visualizer()
+        self.gimbal_tracker = (
+            GimbalTracker.from_config(self.config)
+            if self.config.get("gimbal", {}).get("enabled", True)
+            else None
+        )
         self.preprocessor = FramePreprocessor(
             target_width=self.config.get("inference", {}).get("resolution_width", 1280),
             target_height=self.config.get("inference", {}).get("resolution_height", 720),
@@ -102,6 +108,7 @@ class DetectionPipeline:
         self.running = True
         last_detections = []
         last_tracks = []
+        self._latest_gimbal_signal = None
 
         # Warmup
         self.detector.warmup(rounds=2)
@@ -135,6 +142,13 @@ class DetectionPipeline:
                         alert_targets = last_tracks if last_tracks else last_detections
                         alerts = self.alert_manager.check_detections(alert_targets)
 
+                # Gimbal Tracking
+                if self.gimbal_tracker:
+                    h, w = frame.shape[:2]
+                    self._latest_gimbal_signal = self.gimbal_tracker.update(last_tracks, w, h)
+                else:
+                    self._latest_gimbal_signal = None
+
                 # Visualize
                 display_frame = frame.copy()
                 if last_tracks:
@@ -144,7 +158,8 @@ class DetectionPipeline:
                         else None
                     )
                     display_frame = self.visualizer.draw_tracks(
-                        display_frame, last_tracks, flagged
+                        display_frame, last_tracks, flagged,
+                        locked_id=self.gimbal_tracker.locked_track_id if self.gimbal_tracker else None
                     )
                 elif last_detections:
                     flagged = (
@@ -156,10 +171,15 @@ class DetectionPipeline:
                         display_frame, last_detections, flagged
                     )
 
-                # FPS
+                # FPS & Gimbal Info
                 elapsed = time.perf_counter() - t_start
                 self._update_fps(elapsed)
                 display_frame = self.visualizer.draw_fps(display_frame, self._fps)
+                
+                if self._latest_gimbal_signal and self._latest_gimbal_signal.locked:
+                    display_frame = self.visualizer.draw_gimbal_info(
+                        display_frame, self._latest_gimbal_signal
+                    )
 
                 # Output
                 if self.show_display:
@@ -176,6 +196,13 @@ class DetectionPipeline:
                         self.detector.update_thresholds(
                             confidence=self.detector.confidence_threshold - 0.05
                         )
+                    elif key == ord("l"):
+                        # Lock onto the first available track if none locked, or unlock
+                        if self.gimbal_tracker:
+                            if self.gimbal_tracker.locked_track_id is None and last_tracks:
+                                self.gimbal_tracker.lock_target(last_tracks[0].track_id)
+                            else:
+                                self.gimbal_tracker.unlock_target()
 
                 if writer:
                     writer.write(display_frame)

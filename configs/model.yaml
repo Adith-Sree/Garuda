@@ -3,7 +3,7 @@
 # --- Model Settings ---
 model:
   architecture: yolov8n          # yolov8n / yolov8s / yolov8m / yolov8l / yolov8x
-  weights: models/weights/best.pt            # pretrained weights path
+  weights: yolov8n.pt        # pretrained weights path
   confidence_threshold: 0.35
   iou_threshold: 0.45
   max_detections: 100
@@ -57,6 +57,15 @@ alerts:
   cooldown_seconds: 5           # min seconds between repeated alerts
   webhook_url: ""               # optional webhook URL
   log_file: logs/alerts.log
+
+# --- Gimbal Tracking Settings ---
+gimbal:
+  enabled: true
+  p_gain: 0.5
+  i_gain: 0.0
+  d_gain: 0.1
+  deadzone: 0.02
+  max_output: 1.0
 
 # --- Export Settings ---
 export:

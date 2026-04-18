@@ -32,6 +32,7 @@ source garuda_env/bin/activate
 echo "[4/6] Installing Python dependencies..."
 pip install --upgrade pip
 pip install numpy opencv-python-headless pyyaml requests
+pip install deep_sort_realtime
 
 # Install TFLite runtime (optimised for ARM)
 echo "[5/6] Installing TFLite runtime..."

@@ -133,7 +133,7 @@ class ObjectTracker:
             det_conf = trk.det_conf if hasattr(trk, "det_conf") else 0.0
             tracks.append(
                 Track(
-                    track_id=trk.track_id,
+                    track_id=int(trk.track_id),
                     bbox=(int(bbox[0]), int(bbox[1]), int(bbox[2]), int(bbox[3])),
                     class_name=det_class or "",
                     confidence=float(det_conf) if det_conf else 0.0,

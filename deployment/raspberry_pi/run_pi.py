@@ -21,6 +21,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 from src.utils.logger import setup_logger
 from src.utils.visualization import Visualizer
 from src.alerts.alert_manager import AlertManager
+from src.tracking.tracker import ObjectTracker
+from src.tracking.gimbal_tracker import GimbalTracker
 
 logger = setup_logger("garuda.pi", log_file="logs/pi_inference.log")
 
@@ -156,6 +158,8 @@ def main():
     )
     visualizer = Visualizer()
     alert_mgr = AlertManager.from_config(config) if config.get("alerts", {}).get("enabled") else None
+    tracker = ObjectTracker.from_config(config) if config.get("tracking", {}).get("enabled", True) else None
+    gimbal_tracker = GimbalTracker.from_config(config) if config.get("gimbal", {}).get("enabled", True) else None
 
     # Open source
     source = int(args.source) if args.source.isdigit() else args.source
@@ -172,6 +176,8 @@ def main():
     frame_count = 0
     fps_buffer = []
     last_dets = []
+    last_tracks = []
+    latest_gimbal_signal = None
 
     try:
         while True:
@@ -186,9 +192,32 @@ def main():
                 last_dets = detector.detect(frame)
                 if alert_mgr:
                     alert_mgr.check_detections(last_dets)
+                
+                # Tracking
+                if tracker:
+                    last_tracks = tracker.update(last_dets, frame)
+                else:
+                    last_tracks = []
 
+            # Gimbal Tracking
+            if gimbal_tracker:
+                h_f, w_f = frame.shape[:2]
+                latest_gimbal_signal = gimbal_tracker.update(last_tracks, w_f, h_f)
+
+            # Visualization
             flagged = alert_mgr.flagged_classes if alert_mgr else None
-            display = visualizer.draw_detections(frame, last_dets, flagged)
+            
+            if last_tracks:
+                display = visualizer.draw_tracks(
+                    frame, last_tracks, flagged,
+                    locked_id=gimbal_tracker.locked_track_id if gimbal_tracker else None
+                )
+            else:
+                display = visualizer.draw_detections(frame, last_dets, flagged)
+
+            # Draw Gimbal Info
+            if latest_gimbal_signal and latest_gimbal_signal.locked:
+                display = visualizer.draw_gimbal_info(display, latest_gimbal_signal)
 
             elapsed = time.perf_counter() - t0
             if elapsed > 0:
@@ -199,8 +228,15 @@ def main():
             display = visualizer.draw_fps(display, fps)
 
             cv2.imshow("Garuda Pi", display)
-            if cv2.waitKey(1) & 0xFF == ord("q"):
+            key = cv2.waitKey(1) & 0xFF
+            if key == ord("q"):
                 break
+            elif key == ord("l"):
+                if gimbal_tracker:
+                    if gimbal_tracker.locked_track_id is None and last_tracks:
+                        gimbal_tracker.lock_target(last_tracks[0].track_id)
+                    else:
+                        gimbal_tracker.unlock_target()
 
     except KeyboardInterrupt:
         pass
