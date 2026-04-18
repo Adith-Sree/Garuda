@@ -38,8 +38,9 @@ pip install deep_sort_realtime
 echo "[5/6] Installing ONNX Runtime..."
 pip install onnxruntime
 
-# Install Ultralytics (lightweight mode)
-pip install ultralytics
+# NOTE: We do NOT install ultralytics/torch on Pi.
+# The model is already exported to ONNX and runs via onnxruntime.
+# This saves ~500 MB-1.5 GB of disk space.
 
 # Verify installation
 echo "[6/6] Verifying installation..."
