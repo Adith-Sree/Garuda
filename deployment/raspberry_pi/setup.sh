@@ -36,7 +36,7 @@ pip install deep_sort_realtime
 
 # Install TFLite runtime (optimised for ARM)
 echo "[5/6] Installing TFLite runtime..."
-pip install tflite-runtime
+pip install tflite-runtime || pip install ai-edge-litert || echo "⚠️  tflite-runtime could not be installed via pip. Falling back to Ultralytics native inference."
 
 # Install Ultralytics (lightweight mode)
 pip install ultralytics

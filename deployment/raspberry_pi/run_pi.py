@@ -42,7 +42,10 @@ class TFLiteDetector:
         try:
             from tflite_runtime.interpreter import Interpreter
         except ImportError:
-            from tensorflow.lite.python.interpreter import Interpreter
+            try:
+                from ai_edge_litert.interpreter import Interpreter
+            except ImportError:
+                from tensorflow.lite.python.interpreter import Interpreter
 
         self.interpreter = Interpreter(model_path=model_path)
         self.interpreter.allocate_tensors()
