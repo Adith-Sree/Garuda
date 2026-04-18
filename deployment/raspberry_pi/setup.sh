@@ -19,7 +19,7 @@ echo "[2/6] Installing system dependencies..."
 sudo apt-get install -y \
     python3-pip python3-venv python3-dev \
     libopencv-dev python3-opencv \
-    libatlas-base-dev libhdf5-dev \
+    libopenblas-dev libhdf5-dev \
     libjpeg-dev libpng-dev libtiff-dev \
     cmake git wget curl
 
