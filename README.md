@@ -36,15 +36,18 @@ Garuda/
 ├── deployment/
 │   ├── raspberry_pi/
 │   │   ├── setup.sh           # Pi environment setup
-│   │   └── run_pi.py          # TFLite inference (3–8 FPS)
+│   │   ├── run_pi.py          # ONNX inference + Web Stream (3–10 FPS)
+│   │   ├── requirements_pi.txt # Minimal dependencies for Pi
+│   │   └── pi_config.yaml     # Pi-specific mission config
 │   └── jetson/
 │       ├── setup.sh           # Jetson environment setup
 │       └── run_jetson.py      # TensorRT/ONNX inference (10–25 FPS)
 ├── tests/
 │   └── test_pipeline.py       # Unit tests
 ├── main.py                    # CLI entry point
-├── requirements.txt           # Python dependencies
-└── README.md
+├── requirements.txt           # Main dependencies
+├── README.md
+└── walkthrough.md             # Detailed deployment guide
 ```
 
 ---
@@ -151,20 +154,26 @@ python main.py export --weights best.pt --batch-all
 
 ## 🖥️ Deployment
 
-### Raspberry Pi (3–8 FPS)
+### Raspberry Pi 4 (3–10 FPS)
 
-```bash
-# On the Pi:
-chmod +x deployment/raspberry_pi/setup.sh
-./deployment/raspberry_pi/setup.sh
+Optimised for minimal footprint (~120 MB deps). No PyTorch or Ultralytics required.
 
-# Run inference with TFLite model
-python deployment/raspberry_pi/run_pi.py \
-    --model models/weights/yolov8n_float32.tflite \
-    --source 0 \
-    --frame-skip 3 \
-    --imgsz 320
-```
+1. **On the Pi:**
+   ```bash
+   chmod +x deployment/raspberry_pi/setup.sh
+   ./deployment/raspberry_pi/setup.sh
+   source garuda_env/bin/activate
+   ```
+
+2. **Run inference with ONNX model:**
+   ```bash
+   # Run with web stream (View at http://<PI_IP>:5000)
+   python deployment/raspberry_pi/run_pi.py \
+       --model models/pi4/best_pi4_320.onnx \
+       --stream --no-display
+
+   # Flags: --stream (web view), --no-display (headless), --frame-skip 3
+   ```
 
 ### NVIDIA Jetson (10–25 FPS)
 
@@ -235,6 +244,7 @@ While running inference:
 | Key | Action |
 |-----|--------|
 | `q` | Quit |
+| `l` | Lock/Unlock Gimbal Target |
 | `+` | Increase confidence threshold (+0.05) |
 | `-` | Decrease confidence threshold (-0.05) |
 

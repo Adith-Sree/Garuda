@@ -17,11 +17,56 @@ import argparse
 import logging
 import sys
 import time
+import threading
+from http.server import BaseHTTPRequestHandler, HTTPServer
+from socketserver import ThreadingMixIn
 from pathlib import Path
 
 import cv2
 import numpy as np
 import yaml
+
+# ---------------------------------------------------------------------------
+# Lightweight Web Streamer (standard library only)
+# ---------------------------------------------------------------------------
+class StreamingOutput:
+    def __init__(self):
+        self.frame = None
+        self.condition = threading.Condition()
+
+    def write(self, frame):
+        with self.condition:
+            self.frame = frame
+            self.condition.notify_all()
+
+class StreamingHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        if self.path == '/':
+            self.send_response(200)
+            self.send_header('Age', 0)
+            self.send_header('Cache-Control', 'no-cache, private')
+            self.send_header('Pragma', 'no-cache')
+            self.send_header('Content-Type', 'multipart/x-mixed-replace; boundary=FRAME')
+            self.end_headers()
+            try:
+                while True:
+                    with streaming_output.condition:
+                        streaming_output.condition.wait()
+                        frame = streaming_output.frame
+                    self.wfile.write(b'--FRAME\r\n')
+                    self.send_header('Content-Type', 'image/jpeg')
+                    self.send_header('Content-Length', len(frame))
+                    self.end_headers()
+                    self.wfile.write(frame)
+                    self.wfile.write(b'\r\n')
+            except Exception:
+                pass
+
+class StreamingServer(ThreadingMixIn, HTTPServer):
+    allow_reuse_address = True
+    daemon_threads = True
+
+streaming_output = StreamingOutput()
 
 # ---------------------------------------------------------------------------
 # Add project root to path so src/ modules are importable
@@ -137,11 +182,15 @@ class ONNXDetector:
             if conf < self.confidence_threshold:
                 continue
 
-            # Denormalize from [0,1] → pixel coordinates
-            x1 = int((x_c - w / 2) * ow)
-            y1 = int((y_c - h / 2) * oh)
-            x2 = int((x_c + w / 2) * ow)
-            y2 = int((y_c + h / 2) * oh)
+            # YOLOv8 ONNX output is usually in pixel coordinates relative to imgsz.
+            # We scale these to the original frame size (ow, oh).
+            scale_x = ow / self.imgsz
+            scale_y = oh / self.imgsz
+
+            x1 = int((x_c - w / 2) * scale_x)
+            y1 = int((y_c - h / 2) * scale_y)
+            x2 = int((x_c + w / 2) * scale_x)
+            y2 = int((y_c + h / 2) * scale_y)
 
             detections.append(
                 Detection(
@@ -190,6 +239,11 @@ def main() -> None:
         "--no-display",
         action="store_true",
         help="Headless mode — do not call cv2.imshow (use for SSH/no monitor)",
+    )
+    parser.add_argument(
+        "--stream",
+        action="store_true",
+        help="Enable MJPEG web stream on port 5000",
     )
     args = parser.parse_args()
 
@@ -261,12 +315,20 @@ def main() -> None:
 
     display = not args.no_display
 
+    # Start MJPEG Streamer if requested
+    if args.stream:
+        server = StreamingServer(('', 5000), StreamingHandler)
+        stream_thread = threading.Thread(target=server.serve_forever, daemon=True)
+        stream_thread.start()
+        logger.info("MJPEG Web Stream started at http://[PI_IP]:5000")
+
     logger.info(
-        "Pi inference started — model=%s  source=%s  display=%s",
-        args.model, args.source, display,
+        "Pi inference started — model=%s  source=%s  display=%s  stream=%s",
+        args.model, args.source, display, args.stream,
     )
     print(
         f"\n[Garuda Pi] Running. "
+        f"{'Web stream at http://<PI_IP>:5000' if args.stream else ''} "
         f"{'Press Q to quit.' if display else 'Press Ctrl+C to stop.'}\n"
     )
 
@@ -321,24 +383,30 @@ def main() -> None:
                     flush=True,
                 )
 
+            # Visualization (required for local display OR web stream)
+            if display or args.stream:
+                flagged = alert_mgr.flagged_classes if alert_mgr else None
+
+                if last_tracks:
+                    annotated = visualizer.draw_tracks(
+                        frame, last_tracks, flagged,
+                        locked_id=gimbal_tracker.locked_track_id if gimbal_tracker else None,
+                    )
+                else:
+                    annotated = visualizer.draw_detections(frame, last_dets, flagged)
+
+                if latest_gimbal_signal and latest_gimbal_signal.locked:
+                    annotated = visualizer.draw_gimbal_info(annotated, latest_gimbal_signal)
+
+                annotated = visualizer.draw_fps(annotated, fps)
+
+                # Web Stream Output
+                if args.stream:
+                    _, jpeg = cv2.imencode('.jpg', annotated)
+                    streaming_output.write(jpeg.tobytes())
+
             if not display:
                 continue
-
-            # Visualization (skipped in headless mode)
-            flagged = alert_mgr.flagged_classes if alert_mgr else None
-
-            if last_tracks:
-                annotated = visualizer.draw_tracks(
-                    frame, last_tracks, flagged,
-                    locked_id=gimbal_tracker.locked_track_id if gimbal_tracker else None,
-                )
-            else:
-                annotated = visualizer.draw_detections(frame, last_dets, flagged)
-
-            if latest_gimbal_signal and latest_gimbal_signal.locked:
-                annotated = visualizer.draw_gimbal_info(annotated, latest_gimbal_signal)
-
-            annotated = visualizer.draw_fps(annotated, fps)
 
             cv2.imshow("Garuda Pi", annotated)
             key = cv2.waitKey(1) & 0xFF
